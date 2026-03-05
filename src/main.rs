@@ -49,6 +49,42 @@ struct ApiChatMessage {
     content: Option<String>,
 }
 
+// ── Gemini types ─────────────────────────────────────────────────────
+#[derive(Serialize)]
+struct GeminiRequest {
+    contents: Vec<GeminiContent>,
+}
+
+#[derive(Serialize)]
+struct GeminiContent {
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Serialize)]
+struct GeminiPart {
+    text: String,
+}
+
+#[derive(Deserialize)]
+struct GeminiResponse {
+    candidates: Option<Vec<GeminiCandidate>>,
+}
+
+#[derive(Deserialize)]
+struct GeminiCandidate {
+    content: Option<GeminiResponseContent>,
+}
+
+#[derive(Deserialize)]
+struct GeminiResponseContent {
+    parts: Option<Vec<GeminiResponsePart>>,
+}
+
+#[derive(Deserialize)]
+struct GeminiResponsePart {
+    text: Option<String>,
+}
+
 // ── Shared ───────────────────────────────────────────────────────────
 #[derive(Serialize, Deserialize, Clone)]
 struct ChatMessage {
@@ -186,23 +222,28 @@ fn build_prompt(cmd: &str, stderr: &str) -> String {
 // ── AI provider selection ────────────────────────────────────────────
 fn get_ai_response(prompt: &str) -> Option<(String, String)> {
     // 1. Try Ollama (local)
-    if let Some(answer) = try_ollama(prompt) {
-        return Some((answer, "Ollama".to_string()));
+    // if let Some(answer) = try_ollama(prompt) {
+    //     return Some((answer, "Ollama".to_string()));
+    // }
+
+    // // 2. Try OpenAI
+    // if let Some(answer) = try_openai(prompt) {
+    //     return Some((answer, "OpenAI".to_string()));
+    // }
+
+    // 3. Try Gemini
+    if let Some(answer) = try_gemini(prompt) {
+        return Some((answer, "Gemini".to_string()));
     }
 
-    // 2. Try OpenAI
-    if let Some(answer) = try_openai(prompt) {
-        return Some((answer, "OpenAI".to_string()));
-    }
-
-    // 3. Fallback: OpenRouter
+    // 4. Fallback: OpenRouter
     if let Some(answer) = try_openrouter(prompt) {
         return Some((answer, "OpenRouter".to_string()));
     }
 
-    // 4. No provider available
+    // 5. No provider available
     println!(
-        "\n{}\n\n  {}\n  Install from {} then run:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n",
+        "\n{}\n\n  {}\n  Install from {} then run:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n",
         "✖ No AI provider available.".red(),
         "Option 1 – Ollama (local, free, private)".bold(),
         "https://ollama.com".underline(),
@@ -210,7 +251,10 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
         "Option 2 – OpenAI (cloud)".bold(),
         ".env".cyan(),
         "OPENAI_API_KEY=your_key_here".cyan(),
-        "Option 3 – OpenRouter (cloud)".bold(),
+        "Option 3 – Gemini (cloud)".bold(),
+        ".env".cyan(),
+        "GEMINI_API_KEY=your_key_here".cyan(),
+        "Option 4 – OpenRouter (cloud)".bold(),
         ".env".cyan(),
         "OPENROUTER_API_KEY=your_key_here".cyan(),
     );
@@ -292,6 +336,72 @@ fn try_openai(prompt: &str) -> Option<String> {
                 );
             } else {
                 eprintln!("\n{} {}", "⚠ Connection Error:".yellow().bold(), e.to_string().red());
+            }
+            None
+        }
+    }
+}
+
+// ── Gemini ───────────────────────────────────────────────────────────
+fn try_gemini(prompt: &str) -> Option<String> {
+    let api_key = env::var("GEMINI_API_KEY").ok()?;
+    let model =
+        env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
+
+    let body = GeminiRequest {
+        contents: vec![GeminiContent {
+            parts: vec![GeminiPart {
+                text: prompt.to_string(),
+            }],
+        }],
+    };
+
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model, api_key
+    );
+
+    let res = ureq::post(&url)
+        .timeout(std::time::Duration::from_secs(30))
+        .set("Content-Type", "application/json")
+        .send_json(&body);
+
+    match res {
+        Ok(response) => {
+            let data: GeminiResponse = response.into_json().ok()?;
+            let content = data
+                .candidates?
+                .into_iter()
+                .next()?
+                .content?
+                .parts?
+                .into_iter()
+                .next()?
+                .text?;
+            let trimmed = content.trim().to_string();
+
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        }
+        Err(e) => {
+            if let ureq::Error::Status(code, response) = e {
+                let error_body =
+                    response.into_string().unwrap_or_else(|_| "unknown error".to_string());
+                eprintln!(
+                    "\n{} (Status {}): {}",
+                    "⚠ Gemini API Error".yellow().bold(),
+                    code,
+                    error_body.red()
+                );
+            } else {
+                eprintln!(
+                    "\n{} {}",
+                    "⚠ Connection Error:".yellow().bold(),
+                    e.to_string().red()
+                );
             }
             None
         }

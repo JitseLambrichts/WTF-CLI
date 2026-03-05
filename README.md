@@ -6,13 +6,13 @@
 ![Issues](https://img.shields.io/github/issues/JitseLambrichts/WTH-CLI)
 ![Last Commit](https://img.shields.io/github/last-commit/JitseLambrichts/WTH-CLI)
 
-`wth-cli` is a command-line interface wrapper that seamlessly runs your terminal commands and, if they fail, intercepts the error output to provide an AI-generated solution on the spot. It supports local models via **Ollama**, as well as cloud-based ones via **OpenAI** or **OpenRouter**.
+`wth-cli` is a command-line interface wrapper that seamlessly runs your terminal commands and, if they fail, intercepts the error output to provide an AI-generated solution on the spot. It supports local models via **Ollama**, as well as cloud-based ones via **OpenAI**, **Gemini**, or **OpenRouter**.
 
 ## Features
 
 - **Seamless wrapping**: Just prepend `wth` to your command. If it works, you get your normal output. If it fails, the AI jumps in.
 - **Privacy first**: The primary focus is running local AI models using [Ollama](https://ollama.com/), meaning no API costs and total privacy.
-- **Cloud Fallbacks**: Supports OpenAI (`OPENAI_API_KEY`) and OpenRouter (`OPENROUTER_API_KEY`) fallbacks.
+- **Cloud Fallbacks**: Supports OpenAI (`OPENAI_API_KEY`), Gemini (`GEMINI_API_KEY`), and OpenRouter (`OPENROUTER_API_KEY`) fallbacks.
 - **Clear structure**: Provides actionable, structured outputs so you know exactly what failed and the command to fix it.
 
 ## Prerequisites
@@ -107,6 +107,10 @@ OLLAMA_HOST=http://localhost:11434
 OPENAI_API_KEY=your_openai_key_here
 OPENAI_MODEL=gpt-4o-mini
 # OPENAI_API_BASE=https://api.openai.com/v1
+
+# Gemini Fallback
+GEMINI_API_KEY=your_gemini_key_here
+GEMINI_MODEL=gemini-2.0-flash
 
 # OpenRouter Fallback
 OPENROUTER_API_KEY=your_openrouter_key_here
