@@ -61,6 +61,24 @@ struct ApiChatMessage {
     content: Option<String>,
 }
 
+// ── Anthropic (Claude) types ─────────────────────────────────────────
+#[derive(Serialize)]
+struct ClaudeRequest {
+    model: String,
+    max_tokens: u32,
+    messages: Vec<ChatMessage>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeResponse {
+    content: Option<Vec<ClaudeContentBlock>>,
+}
+
+#[derive(Deserialize)]
+struct ClaudeContentBlock {
+    text: Option<String>,
+}
+
 // ── Gemini types ─────────────────────────────────────────────────────
 #[derive(Serialize)]
 struct GeminiRequest {
@@ -324,9 +342,10 @@ fn run_setup() {
     );
 
     let providers = &[
-        "Ollama    – Local, free, and private (requires Ollama installed)",
-        "OpenAI    – Cloud (requires OPENAI_API_KEY)",
-        "Gemini    – Cloud (requires GEMINI_API_KEY)",
+        "Ollama     – Local, free, and private (requires Ollama installed)",
+        "OpenAI     – Cloud (requires OPENAI_API_KEY)",
+        "Claude     – Cloud (requires CLAUDE_API_KEY)",
+        "Gemini     – Cloud (requires GEMINI_API_KEY)",
         "OpenRouter – Cloud (requires OPENROUTER_API_KEY)",
     ];
 
@@ -346,8 +365,9 @@ fn run_setup() {
     let provider_name = match selection {
         0 => "ollama",
         1 => "openai",
-        2 => "gemini",
-        3 => "openrouter",
+        2 => "claude",
+        3 => "gemini",
+        4 => "openrouter",
         _ => unreachable!(),
     };
 
@@ -410,8 +430,9 @@ fn run_setup() {
     let display_name = match selection {
         0 => "Ollama",
         1 => "OpenAI",
-        2 => "Gemini",
-        3 => "OpenRouter",
+        2 => "Claude",
+        3 => "Gemini",
+        4 => "OpenRouter",
         _ => unreachable!(),
     };
 
@@ -452,6 +473,15 @@ fn run_setup() {
             }
         }
         2 => {
+            if env::var("CLAUDE_API_KEY").is_err() {
+                println!(
+                    "\n  {}\n  {}\n",
+                    "Add your API key to .env:".dimmed(),
+                    "CLAUDE_API_KEY=sk-ant-...".cyan()
+                );
+            }
+        }
+        3 => {
             if env::var("GEMINI_API_KEY").is_err() {
                 println!(
                     "\n  {}\n  {}\n",
@@ -460,7 +490,7 @@ fn run_setup() {
                 );
             }
         }
-        3 => {
+        4 => {
             if env::var("OPENROUTER_API_KEY").is_err() {
                 println!(
                     "\n  {}\n  {}\n",
@@ -525,6 +555,16 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
             );
             return None;
         }
+        "claude" => {
+            if let Some((answer, model)) = try_claude(prompt) {
+                return Some((answer, format!("Claude – {}", model)));
+            }
+            eprintln!(
+                "\n{}",
+                "✖ Claude failed. Check your CLAUDE_API_KEY in .env".red()
+            );
+            return None;
+        }
         "gemini" => {
             if let Some((answer, model)) = try_gemini(prompt) {
                 return Some((answer, format!("Gemini – {}", model)));
@@ -553,6 +593,9 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
             if let Some((answer, model)) = try_openai(prompt) {
                 return Some((answer, format!("OpenAI – {}", model)));
             }
+            if let Some((answer, model)) = try_claude(prompt) {
+                return Some((answer, format!("Claude – {}", model)));
+            }
             if let Some((answer, model)) = try_gemini(prompt) {
                 return Some((answer, format!("Gemini – {}", model)));
             }
@@ -564,7 +607,7 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
 
     // No provider available
     println!(
-        "\n{}\n\n  {}\n\n  {}\n  Install from {} then run:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n",
+        "\n{}\n\n  {}\n\n  {}\n  Install from {} then run:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n\n  {}\n  Create a {} file with:\n  {}\n",
         "✖ No AI provider available.".red(),
         "Run 'wth --setup' to configure a provider.".bold().cyan(),
         "Option 1 – Ollama (local, free, private)".bold(),
@@ -573,10 +616,13 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
         "Option 2 – OpenAI (cloud)".bold(),
         ".env".cyan(),
         "OPENAI_API_KEY=your_key_here".cyan(),
-        "Option 3 – Gemini (cloud)".bold(),
+        "Option 3 – Claude (cloud)".bold(),
+        ".env".cyan(),
+        "CLAUDE_API_KEY=your_key_here".cyan(),
+        "Option 4 – Gemini (cloud)".bold(),
         ".env".cyan(),
         "GEMINI_API_KEY=your_key_here".cyan(),
-        "Option 4 – OpenRouter (cloud)".bold(),
+        "Option 5 – OpenRouter (cloud)".bold(),
         ".env".cyan(),
         "OPENROUTER_API_KEY=your_key_here".cyan(),
     );
@@ -659,6 +705,66 @@ fn try_openai(prompt: &str) -> Option<(String, String)> {
                 );
             } else {
                 eprintln!("\n{} {}", "⚠ Connection Error:".yellow().bold(), e.to_string().red());
+            }
+            None
+        }
+    }
+}
+
+// ── Claude (Anthropic) ───────────────────────────────────────────────
+fn try_claude(prompt: &str) -> Option<(String, String)> {
+    let api_key = env::var("CLAUDE_API_KEY").ok()?;
+    let model = env::var("CLAUDE_MODEL").unwrap_or_else(|_| "claude-sonnet-4-20250514".to_string());
+
+    let body = ClaudeRequest {
+        model: model.clone(),
+        max_tokens: 4096,
+        messages: vec![ChatMessage {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+        }],
+    };
+
+    let res = ureq::post("https://api.anthropic.com/v1/messages")
+        .timeout(std::time::Duration::from_secs(60))
+        .set("Content-Type", "application/json")
+        .set("x-api-key", &api_key)
+        .set("anthropic-version", "2023-06-01")
+        .send_json(&body);
+
+    match res {
+        Ok(response) => {
+            let data: ClaudeResponse = response.into_json().ok()?;
+            let content = data
+                .content?
+                .into_iter()
+                .filter_map(|block| block.text)
+                .collect::<Vec<_>>()
+                .join("");
+            let trimmed = content.trim().to_string();
+
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some((trimmed, model))
+            }
+        }
+        Err(e) => {
+            if let ureq::Error::Status(code, response) = e {
+                let error_body =
+                    response.into_string().unwrap_or_else(|_| "unknown error".to_string());
+                eprintln!(
+                    "\n{} (Status {}): {}",
+                    "⚠ Claude API Error".yellow().bold(),
+                    code,
+                    error_body.red()
+                );
+            } else {
+                eprintln!(
+                    "\n{} {}",
+                    "⚠ Connection Error:".yellow().bold(),
+                    e.to_string().red()
+                );
             }
             None
         }
