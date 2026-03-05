@@ -1,5 +1,5 @@
 use colored::Colorize;
-use dialoguer::{Select, theme::ColorfulTheme};
+use dialoguer::{Input, Select, theme::ColorfulTheme};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -452,7 +452,7 @@ fn run_setup() {
         );
     }
 
-    // Show provider-specific instructions
+    // Prompt for API key for cloud providers
     match selection {
         0 => {
             if selected_ollama_model.is_none() {
@@ -463,40 +463,66 @@ fn run_setup() {
                 );
             }
         }
-        1 => {
-            if env::var("OPENAI_API_KEY").is_err() {
+        1 | 2 | 3 | 4 => {
+            let (env_key, placeholder) = match selection {
+                1 => ("OPENAI_API_KEY", "sk-..."),
+                2 => ("CLAUDE_API_KEY", "sk-ant-..."),
+                3 => ("GEMINI_API_KEY", "AI..."),
+                4 => ("OPENROUTER_API_KEY", "sk-or-..."),
+                _ => unreachable!(),
+            };
+
+            let existing_key = env::var(env_key).unwrap_or_default();
+            let has_key = !existing_key.is_empty();
+
+            if has_key {
                 println!(
-                    "\n  {}\n  {}\n",
-                    "Add your API key to .env:".dimmed(),
-                    "OPENAI_API_KEY=sk-...".cyan()
+                    "\n{} {} {}",
+                    "✔".green().bold(),
+                    format!("{} is already set.", env_key).bold(),
+                    "Press Enter to keep it, or paste a new key:".dimmed()
+                );
+            } else {
+                println!(
+                    "\n{}",
+                    format!("Paste your {} (or press Enter to skip):", env_key).dimmed()
                 );
             }
-        }
-        2 => {
-            if env::var("CLAUDE_API_KEY").is_err() {
-                println!(
-                    "\n  {}\n  {}\n",
-                    "Add your API key to .env:".dimmed(),
-                    "CLAUDE_API_KEY=sk-ant-...".cyan()
-                );
-            }
-        }
-        3 => {
-            if env::var("GEMINI_API_KEY").is_err() {
-                println!(
-                    "\n  {}\n  {}\n",
-                    "Add your API key to .env:".dimmed(),
-                    "GEMINI_API_KEY=AI...".cyan()
-                );
-            }
-        }
-        4 => {
-            if env::var("OPENROUTER_API_KEY").is_err() {
-                println!(
-                    "\n  {}\n  {}\n",
-                    "Add your API key to .env:".dimmed(),
-                    "OPENROUTER_API_KEY=sk-or-...".cyan()
-                );
+
+            let input: Result<String, _> = Input::with_theme(&ColorfulTheme::default())
+                .with_prompt(format!("  {}", env_key))
+                .default(if has_key { existing_key.clone() } else { String::new() })
+                .allow_empty(true)
+                .show_default(false)
+                .with_initial_text("")
+                .interact_text();
+
+            if let Ok(key) = input {
+                let key = key.trim().to_string();
+                if !key.is_empty() {
+                    contents = update_env_var(&contents, env_key, &key);
+                    // Re-write .env with the key
+                    if let Err(e) = fs::write(env_path, &contents) {
+                        eprintln!(
+                            "\n{} {}",
+                            "✖ Could not write .env:".red(),
+                            e.to_string().red()
+                        );
+                        return;
+                    }
+                    println!(
+                        "{} {} {}",
+                        "✔".green().bold(),
+                        format!("{} saved to .env", env_key).bold(),
+                        format!("({}...)", &key[..key.len().min(8)]).dimmed()
+                    );
+                } else if !has_key {
+                    println!(
+                        "\n  {}\n  {}\n",
+                        format!("Add your API key to .env later:").dimmed(),
+                        format!("{}={}", env_key, placeholder).cyan()
+                    );
+                }
             }
         }
         _ => {}
