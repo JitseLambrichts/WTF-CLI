@@ -29,6 +29,16 @@ struct OllamaMessage {
     content: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct OllamaModelsResponse {
+    models: Vec<OllamaModel>,
+}
+
+#[derive(Deserialize)]
+struct OllamaModel {
+    name: String,
+}
+
 // ── OpenAI-compatible types (used by OpenAI and OpenRouter) ─────────
 #[derive(Serialize)]
 struct ApiChatRequest {
@@ -345,27 +355,47 @@ fn run_setup() {
     let env_path = ".env";
     let mut contents = fs::read_to_string(env_path).unwrap_or_default();
 
-    // Update or add WTH_PROVIDER
-    if contents.contains("WTH_PROVIDER=") {
-        let new_contents: Vec<String> = contents
-            .lines()
-            .map(|line| {
-                if line.starts_with("WTH_PROVIDER=") {
-                    format!("WTH_PROVIDER={}", provider_name)
-                } else {
-                    line.to_string()
+    // Update WTH_PROVIDER
+    contents = update_env_var(&contents, "WTH_PROVIDER", provider_name);
+
+    let mut selected_ollama_model = None;
+
+    if selection == 0 {
+        // Ollama specific: try to fetch models
+        let base_url = env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
+        match ureq::get(&format!("{}/api/tags", base_url))
+            .timeout(std::time::Duration::from_secs(5))
+            .call()
+        {
+            Ok(res) => {
+                if let Ok(data) = res.into_json::<OllamaModelsResponse>() {
+                    let model_names: Vec<String> = data.models.into_iter().map(|m| m.name).collect();
+                    if !model_names.is_empty() {
+                        println!(
+                            "\n{}\n",
+                            "Select an Ollama model:".dimmed()
+                        );
+                        let model_selection = Select::with_theme(&ColorfulTheme::default())
+                            .items(&model_names)
+                            .default(0)
+                            .interact();
+
+                        if let Ok(ms) = model_selection {
+                            let model_name = &model_names[ms];
+                            selected_ollama_model = Some(model_name.clone());
+                            contents = update_env_var(&contents, "OLLAMA_MODEL", model_name);
+                        }
+                    }
                 }
-            })
-            .collect();
-        contents = new_contents.join("\n");
-        if !contents.ends_with('\n') {
-            contents.push('\n');
+            }
+            Err(_) => {
+                println!(
+                    "\n{} {}",
+                    "⚠".yellow(),
+                    "Could not connect to Ollama to list models. Using default.".dimmed()
+                );
+            }
         }
-    } else {
-        if !contents.is_empty() && !contents.ends_with('\n') {
-            contents.push('\n');
-        }
-        contents.push_str(&format!("\nWTH_PROVIDER={}\n", provider_name));
     }
 
     if let Err(e) = fs::write(env_path, &contents) {
@@ -392,14 +422,25 @@ fn run_setup() {
         display_name.cyan().bold()
     );
 
+    if let Some(ref model) = selected_ollama_model {
+        println!(
+            "{} {} {}",
+            "✔".green().bold(),
+            "Model set to".bold(),
+            model.cyan().bold()
+        );
+    }
+
     // Show provider-specific instructions
     match selection {
         0 => {
-            println!(
-                "\n  {}\n  {}\n",
-                "Make sure Ollama is running and you have a model pulled:".dimmed(),
-                "ollama pull qwen3.5:9b".cyan()
-            );
+            if selected_ollama_model.is_none() {
+                println!(
+                    "\n  {}\n  {}\n",
+                    "Make sure Ollama is running and you have a model pulled:".dimmed(),
+                    "ollama pull qwen3.5:9b".cyan()
+                );
+            }
         }
         1 => {
             if env::var("OPENAI_API_KEY").is_err() {
@@ -432,6 +473,30 @@ fn run_setup() {
     }
 }
 
+fn update_env_var(contents: &str, key: &str, value: &str) -> String {
+    let prefix = format!("{}=", key);
+    let mut lines: Vec<String> = contents.lines().map(|l| l.to_string()).collect();
+    let mut found = false;
+
+    for line in lines.iter_mut() {
+        if line.starts_with(&prefix) {
+            *line = format!("{}={}", key, value);
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        lines.push(format!("{}={}", key, value));
+    }
+
+    let mut result = lines.join("\n");
+    if !result.ends_with('\n') && !result.is_empty() {
+        result.push('\n');
+    }
+    result
+}
+
 // ── AI provider selection ────────────────────────────────────────────
 fn get_ai_response(prompt: &str) -> Option<(String, String)> {
     let provider = env::var("WTH_PROVIDER")
@@ -441,8 +506,8 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
     // If a provider is explicitly configured, use only that one
     match provider.as_str() {
         "ollama" => {
-            if let Some(answer) = try_ollama(prompt) {
-                return Some((answer, "Ollama".to_string()));
+            if let Some((answer, model)) = try_ollama(prompt) {
+                return Some((answer, format!("Ollama – {}", model)));
             }
             eprintln!(
                 "\n{}",
@@ -451,8 +516,8 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
             return None;
         }
         "openai" => {
-            if let Some(answer) = try_openai(prompt) {
-                return Some((answer, "OpenAI".to_string()));
+            if let Some((answer, model)) = try_openai(prompt) {
+                return Some((answer, format!("OpenAI – {}", model)));
             }
             eprintln!(
                 "\n{}",
@@ -461,8 +526,8 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
             return None;
         }
         "gemini" => {
-            if let Some(answer) = try_gemini(prompt) {
-                return Some((answer, "Gemini".to_string()));
+            if let Some((answer, model)) = try_gemini(prompt) {
+                return Some((answer, format!("Gemini – {}", model)));
             }
             eprintln!(
                 "\n{}",
@@ -471,8 +536,8 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
             return None;
         }
         "openrouter" => {
-            if let Some(answer) = try_openrouter(prompt) {
-                return Some((answer, "OpenRouter".to_string()));
+            if let Some((answer, model)) = try_openrouter(prompt) {
+                return Some((answer, format!("OpenRouter – {}", model)));
             }
             eprintln!(
                 "\n{}",
@@ -482,17 +547,17 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
         }
         _ => {
             // No provider configured – try all in order (auto-detect)
-            if let Some(answer) = try_ollama(prompt) {
-                return Some((answer, "Ollama".to_string()));
+            if let Some((answer, model)) = try_ollama(prompt) {
+                return Some((answer, format!("Ollama – {}", model)));
             }
-            if let Some(answer) = try_openai(prompt) {
-                return Some((answer, "OpenAI".to_string()));
+            if let Some((answer, model)) = try_openai(prompt) {
+                return Some((answer, format!("OpenAI – {}", model)));
             }
-            if let Some(answer) = try_gemini(prompt) {
-                return Some((answer, "Gemini".to_string()));
+            if let Some((answer, model)) = try_gemini(prompt) {
+                return Some((answer, format!("Gemini – {}", model)));
             }
-            if let Some(answer) = try_openrouter(prompt) {
-                return Some((answer, "OpenRouter".to_string()));
+            if let Some((answer, model)) = try_openrouter(prompt) {
+                return Some((answer, format!("OpenRouter – {}", model)));
             }
         }
     }
@@ -520,12 +585,12 @@ fn get_ai_response(prompt: &str) -> Option<(String, String)> {
 }
 
 // ── Ollama ───────────────────────────────────────────────────────────
-fn try_ollama(prompt: &str) -> Option<String> {
+fn try_ollama(prompt: &str) -> Option<(String, String)> {
     let model = env::var("OLLAMA_MODEL").unwrap_or_else(|_| "qwen3.5:9b".to_string());
     let base_url = env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
 
     let body = OllamaChatRequest {
-        model,
+        model: model.clone(),
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: prompt.to_string(),
@@ -546,18 +611,19 @@ fn try_ollama(prompt: &str) -> Option<String> {
     if trimmed.is_empty() {
         None
     } else {
-        Some(trimmed)
+        Some((trimmed, model))
     }
 }
 
 // ── OpenAI ───────────────────────────────────────────────────────────
-fn try_openai(prompt: &str) -> Option<String> {
+fn try_openai(prompt: &str) -> Option<(String, String)> {
     let api_key = env::var("OPENAI_API_KEY").ok()?;
     let base_url =
         env::var("OPENAI_API_BASE").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+    let model = env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4.1-mini".to_string());
 
     let body = ApiChatRequest {
-        model: env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4.1-mini".to_string()),
+        model: model.clone(),
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: prompt.to_string(),
@@ -579,7 +645,7 @@ fn try_openai(prompt: &str) -> Option<String> {
             if trimmed.is_empty() {
                 None
             } else {
-                Some(trimmed)
+                Some((trimmed, model))
             }
         }
         Err(e) => {
@@ -600,7 +666,7 @@ fn try_openai(prompt: &str) -> Option<String> {
 }
 
 // ── Gemini ───────────────────────────────────────────────────────────
-fn try_gemini(prompt: &str) -> Option<String> {
+fn try_gemini(prompt: &str) -> Option<(String, String)> {
     let api_key = env::var("GEMINI_API_KEY").ok()?;
     let model =
         env::var("GEMINI_MODEL").unwrap_or_else(|_| "gemini-2.0-flash".to_string());
@@ -640,7 +706,7 @@ fn try_gemini(prompt: &str) -> Option<String> {
             if trimmed.is_empty() {
                 None
             } else {
-                Some(trimmed)
+                Some((trimmed, model))
             }
         }
         Err(e) => {
@@ -666,12 +732,13 @@ fn try_gemini(prompt: &str) -> Option<String> {
 }
 
 // ── OpenRouter ───────────────────────────────────────────────────────
-fn try_openrouter(prompt: &str) -> Option<String> {
+fn try_openrouter(prompt: &str) -> Option<(String, String)> {
     let api_key = env::var("OPENROUTER_API_KEY").ok()?;
+    let model = env::var("OPENROUTER_MODEL")
+        .unwrap_or_else(|_| "arcee-ai/trinity-mini:free".to_string());
 
     let body = ApiChatRequest {
-        model: env::var("OPENROUTER_MODEL")
-            .unwrap_or_else(|_| "arcee-ai/trinity-mini:free".to_string()),
+        model: model.clone(),
         messages: vec![ChatMessage {
             role: "user".to_string(),
             content: prompt.to_string(),
@@ -692,6 +759,6 @@ fn try_openrouter(prompt: &str) -> Option<String> {
     if trimmed.is_empty() {
         None
     } else {
-        Some(trimmed)
+        Some((trimmed, model))
     }
 }
