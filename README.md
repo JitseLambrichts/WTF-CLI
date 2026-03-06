@@ -8,7 +8,7 @@
 
 `wtf-cli` is a command-line interface wrapper that seamlessly runs your terminal commands and, if they fail, intercepts the error output to provide an AI-generated solution on the spot. It supports local models via **Ollama**, as well as cloud-based ones via **OpenAI**, **Gemini**, or **OpenRouter**.
 
-<img src="https://github.com/user-attachments/assets/9b4d7f21-2906-4342-835b-22078205d2b4" alt="Screenshot" style="width:50%; height:auto;">
+![Image](https://github.com/user-attachments/assets/9b4d7f21-2906-4342-835b-22078205d2b4)
 
 ## Features
 
