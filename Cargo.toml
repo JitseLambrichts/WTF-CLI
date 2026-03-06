@@ -6,7 +6,7 @@ authors = ["Jitse Lambrichts <jitse.lambrichts@gmail.com>"]
 description = "AI-powered terminal error interpreter. Prepend wtf to any command to get instant diagnoses and fixes."
 license = "MIT"
 readme = "README.md"
-keywords = ["cli", "terminal", "error", "ai", "fix", "debug", "ollama", "developer-tools"]
+keywords = ["cli", "error", "ai", "debug", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
