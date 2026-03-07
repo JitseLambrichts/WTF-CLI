@@ -1,11 +1,19 @@
 # WTF-CLI (What The Fix CLI) 
 
+<p align="center">
+    <a href="https://www.producthunt.com/products/what-the-fix-cli?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-what-the-fix-cli" target="_blank" rel="noopener noreferrer"><img alt="What The Fix-CLI - Prepend 'wtf' to failing commands for an instant AI fix. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1091964&amp;theme=neutral&amp;t=1772881423912"></a>
+</p>
+
 ![Rust](https://img.shields.io/badge/language-Rust-orange)
 ![Crates.io](https://img.shields.io/crates/v/wtf-cli)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Issues](https://img.shields.io/github/issues/JitseLambrichts/WTF-CLI)
 ![Last Commit](https://img.shields.io/github/last-commit/JitseLambrichts/WTF-CLI)
 ![Stars](https://img.shields.io/github/stars/JitseLambrichts/WTF-CLI)
+
+
+
+
 
 `wtf-cli` is a command-line interface wrapper that seamlessly runs your terminal commands and, if they fail, intercepts the error output to provide an AI-generated solution on the spot. It supports local models via **Ollama**, as well as cloud-based ones via **OpenAI**, **Gemini**, or **OpenRouter**.
 
