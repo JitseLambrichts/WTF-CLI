@@ -4,7 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 use std::thread;
 
@@ -169,19 +169,18 @@ fn main() {
     };
 
     // ── Capture stderr while streaming it live ───────────────────────
-    let stderr_handle = child.stderr.take().expect("stderr was piped");
+    let mut stderr_handle = child.stderr.take().expect("stderr was piped");
     let stderr_thread = thread::spawn(move || {
-        let reader = BufReader::new(stderr_handle);
         let mut buffer = String::new();
-        for line in reader.lines() {
-            match line {
-                Ok(line) => {
-                    eprintln!("{}", line);
-                    buffer.push_str(&line);
-                    buffer.push('\n');
-                }
-                Err(_) => break,
+        let mut chunk = [0u8; 1024];
+        while let Ok(n) = stderr_handle.read(&mut chunk) {
+            if n == 0 {
+                break;
             }
+            let s = String::from_utf8_lossy(&chunk[..n]);
+            eprint!("{}", s);
+            let _ = std::io::stderr().flush();
+            buffer.push_str(&s);
         }
         buffer
     });
