@@ -161,6 +161,10 @@ OPENROUTER_MODEL=arcee-ai/trinity-mini:free
     <img src="https://github.com/user-attachments/assets/95b84377-350c-4c65-981d-43f714725ad9"/>
 <p>
 
+## Disclaimer
+
+This project was vibe-coded
+
 ## License
 
 MIT
